@@ -1,0 +1,200 @@
+# Cilium Installation and Configuration for Network Policy Enforcement
+---
+# Note: Cilium is typically installed via Helm. This manifest provides custom configuration.
+# Install Cilium first: helm install cilium cilium/cilium --namespace kube-system
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cilium-config
+  namespace: kube-system
+data:
+  # Enable Hubble for network flow visibility
+  enable-hubble: "true"
+  hubble-listen-address: ":4244"
+  hubble-metrics-server: ":9965"
+  hubble-metrics: "dns,drop,tcp,flow,icmp,http"
+
+  # Enable policy enforcement
+  enable-policy: "default"
+
+  # Enable network policy logging
+  policy-audit-mode: "false"
+
+  # Monitor aggregation
+  monitor-aggregation: "medium"
+
+  # Enable endpoint routes
+  enable-endpoint-routes: "true"
+---
+# Hubble Relay for centralized flow collection
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubble-relay
+  namespace: kube-system
+  labels:
+    app: hubble-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubble-relay
+  template:
+    metadata:
+      labels:
+        app: hubble-relay
+    spec:
+      serviceAccountName: hubble-relay
+      containers:
+        - name: hubble-relay
+          image: quay.io/cilium/hubble-relay:v1.14.4
+          args:
+            - serve
+          ports:
+            - name: grpc
+              containerPort: 4245
+            - name: prometheus
+              containerPort: 9966
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubble-relay
+  namespace: kube-system
+spec:
+  selector:
+    app: hubble-relay
+  ports:
+    - name: grpc
+      port: 4245
+      targetPort: 4245
+    - name: prometheus
+      port: 9966
+      targetPort: 9966
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubble-metrics
+  namespace: kube-system
+  labels:
+    app: hubble-metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9965"
+spec:
+  selector:
+    k8s-app: cilium
+  ports:
+    - name: hubble-metrics
+      port: 9965
+      targetPort: 9965
+      protocol: TCP
+  type: ClusterIP
+---
+# Hubble UI for visual network flow inspection
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hubble-ui
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hubble-ui
+  template:
+    metadata:
+      labels:
+        app: hubble-ui
+    spec:
+      serviceAccountName: hubble-ui
+      containers:
+        - name: frontend
+          image: quay.io/cilium/hubble-ui:v0.12.1
+          ports:
+            - name: http
+              containerPort: 8081
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+        - name: backend
+          image: quay.io/cilium/hubble-ui-backend:v0.12.1
+          ports:
+            - name: grpc-web
+              containerPort: 8090
+          env:
+            - name: EVENTS_SERVER_PORT
+              value: "8090"
+            - name: FLOWS_API_ADDR
+              value: "hubble-relay.kube-system.svc:4245"
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubble-ui
+  namespace: kube-system
+spec:
+  selector:
+    app: hubble-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8081
+  type: NodePort
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hubble-relay
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hubble-ui
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hubble-ui
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cilium.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hubble-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hubble-ui
+subjects:
+  - kind: ServiceAccount
+    name: hubble-ui
+    namespace: kube-system

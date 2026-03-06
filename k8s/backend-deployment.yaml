@@ -1,0 +1,95 @@
+# Policy Generator Backend Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: policy-generator-api
+  namespace: default
+  labels:
+    app: policy-generator-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: policy-generator-api
+  template:
+    metadata:
+      labels:
+        app: policy-generator-api
+    spec:
+      serviceAccountName: policy-generator
+      containers:
+        - name: api
+          image: policy-generator-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "kubernetes.default.svc"
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: policy-generator-api
+  namespace: default
+spec:
+  selector:
+    app: policy-generator-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: policy-generator
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: policy-generator-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods", "namespaces", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: policy-generator-binding
+subjects:
+  - kind: ServiceAccount
+    name: policy-generator
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: policy-generator-role
+  apiGroup: rbac.authorization.k8s.io

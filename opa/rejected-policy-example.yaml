@@ -1,0 +1,121 @@
+# =============================================================================
+# EXAMPLE: NetworkPolicy that WILL BE REJECTED by Gatekeeper
+# =============================================================================
+#
+# PURPOSE:
+#   This file demonstrates a NetworkPolicy that violates the
+#   K8sBlockAllowAllNetworkPolicies constraint. Attempting to apply this
+#   policy to a cluster with Gatekeeper and the constraint active will
+#   result in an admission rejection.
+#
+# WHY THIS IS REJECTED:
+#   This NetworkPolicy triggers multiple violations:
+#
+#   1. VIOLATION - Empty ingress rule (ingress: [{}]):
+#      The ingress list contains a single empty object {}. In Kubernetes,
+#      an empty ingress rule means "allow ALL inbound traffic from ANY source
+#      on ANY port". This is the most common "allow-all" anti-pattern.
+#
+#   2. VIOLATION - Broad pod selector (podSelector: {}):
+#      An empty podSelector matches EVERY pod in the namespace. Combined
+#      with the allow-all ingress rule, this means every pod in the
+#      "healthcare" namespace accepts traffic from anywhere -- effectively
+#      disabling all network segmentation for the namespace.
+#
+#   3. VIOLATION - Ingress rule without "from" field:
+#      The empty ingress rule {} has no "from" field, meaning there are
+#      no source restrictions. Traffic from any pod, namespace, or external
+#      IP address is permitted.
+#
+# EXPECTED ERROR (when applying with Gatekeeper active):
+#   $ kubectl apply -f rejected-policy-example.yaml
+#   Error from server (Forbidden): error when creating "rejected-policy-example.yaml":
+#   admission webhook "validation.gatekeeper.sh" denied the request:
+#   [block-allow-all-network-policies] DENIED: NetworkPolicy 'allow-all-traffic'
+#   in namespace 'healthcare' contains an empty ingress rule (ingress: [{}])
+#   which allows all inbound traffic. Every ingress rule must specify explicit
+#   'from' and/or 'ports' restrictions.
+#
+# HOW TO FIX:
+#   Replace this policy with one that specifies explicit ingress rules.
+#   See the corrected example at the bottom of this file.
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-traffic
+  namespace: healthcare
+  labels:
+    # Labels help identify this policy in logs and audits
+    app: healthcare-platform
+    policy-type: ingress
+  annotations:
+    description: >-
+      WARNING: This is an INSECURE allow-all policy used for demonstration
+      purposes only. It will be rejected by the OPA Gatekeeper constraint
+      K8sBlockAllowAllNetworkPolicies.
+spec:
+  # ---------------------------------------------------------------------------
+  # POD SELECTOR: {}
+  # An empty podSelector matches ALL pods in the namespace. This means every
+  # single pod in the "healthcare" namespace is affected by this policy.
+  # In a healthcare environment, this would expose patient data services,
+  # API gateways, and internal databases to unrestricted traffic.
+  # ---------------------------------------------------------------------------
+  podSelector: {}
+
+  # ---------------------------------------------------------------------------
+  # INGRESS: [{}]
+  # The ingress array contains a single empty rule {}. In the Kubernetes
+  # NetworkPolicy specification, an empty ingress rule means:
+  #   - Allow traffic from ANY source (no "from" restriction)
+  #   - Allow traffic on ANY port (no "ports" restriction)
+  #   - Allow ANY protocol (TCP, UDP, SCTP)
+  #
+  # This is equivalent to having no network policy at all, which defeats
+  # the entire purpose of defining one.
+  # ---------------------------------------------------------------------------
+  ingress:
+    - {}  # <-- THIS IS THE PROBLEM: allows all inbound traffic
+
+  # ---------------------------------------------------------------------------
+  # POLICY TYPES
+  # Specifying "Ingress" here means this policy governs inbound traffic.
+  # Even though policyTypes is correctly specified, the ingress rules
+  # themselves are too permissive.
+  # ---------------------------------------------------------------------------
+  policyTypes:
+    - Ingress
+
+# =============================================================================
+# CORRECTED VERSION (for reference)
+# =============================================================================
+# Below is how this NetworkPolicy SHOULD be written to pass the Gatekeeper
+# constraint. It restricts ingress to specific sources and ports.
+#
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: healthcare-api-ingress
+#   namespace: healthcare
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: healthcare-api        # Only target the API pods, not all pods
+#       tier: frontend
+#   ingress:
+#     - from:
+#         - namespaceSelector:     # Only allow traffic from specific namespaces
+#             matchLabels:
+#               purpose: frontend
+#         - podSelector:           # Only allow traffic from specific pods
+#             matchLabels:
+#               role: api-gateway
+#       ports:
+#         - protocol: TCP
+#           port: 8080             # Only allow traffic on the API port
+#   policyTypes:
+#     - Ingress
+# =============================================================================

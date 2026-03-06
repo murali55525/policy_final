@@ -1,0 +1,82 @@
+{
+  "name": "microservices-security-intent",
+  "namespace": "default",
+  "description": "Security policy intent for microservices architecture",
+  "rules": [
+    {
+      "from": "frontend",
+      "to": "api-gateway",
+      "ports": [80, 443],
+      "protocols": ["TCP"],
+      "description": "Frontend to API Gateway communication"
+    },
+    {
+      "from": "api-gateway",
+      "to": "user-service",
+      "ports": [8080],
+      "protocols": ["TCP"],
+      "description": "API Gateway to User Service"
+    },
+    {
+      "from": "api-gateway",
+      "to": "order-service",
+      "ports": [8080],
+      "protocols": ["TCP"],
+      "description": "API Gateway to Order Service"
+    },
+    {
+      "from": "api-gateway",
+      "to": "product-service",
+      "ports": [8080],
+      "protocols": ["TCP"],
+      "description": "API Gateway to Product Service"
+    },
+    {
+      "from": "user-service",
+      "to": "database",
+      "ports": [5432],
+      "protocols": ["TCP"],
+      "description": "User Service to PostgreSQL Database"
+    },
+    {
+      "from": "order-service",
+      "to": "database",
+      "ports": [5432],
+      "protocols": ["TCP"],
+      "description": "Order Service to PostgreSQL Database"
+    },
+    {
+      "from": "product-service",
+      "to": "database",
+      "ports": [5432],
+      "protocols": ["TCP"],
+      "description": "Product Service to PostgreSQL Database"
+    },
+    {
+      "from": "order-service",
+      "to": "cache",
+      "ports": [6379],
+      "protocols": ["TCP"],
+      "description": "Order Service to Redis Cache"
+    },
+    {
+      "from": "product-service",
+      "to": "cache",
+      "ports": [6379],
+      "protocols": ["TCP"],
+      "description": "Product Service to Redis Cache"
+    },
+    {
+      "from": "frontend",
+      "to": "backend",
+      "ports": [8080],
+      "protocols": ["TCP"]
+    },
+    {
+      "from": "backend",
+      "to": "database",
+      "ports": [5432],
+      "protocols": ["TCP"]
+    }
+  ]
+}

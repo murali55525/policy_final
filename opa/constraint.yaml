@@ -1,0 +1,106 @@
+# =============================================================================
+# OPA Gatekeeper Constraint: block-allow-all-network-policies
+# =============================================================================
+#
+# PURPOSE:
+#   This Constraint ACTIVATES the policy defined in the ConstraintTemplate
+#   "K8sBlockAllowAllNetworkPolicies". While the ConstraintTemplate defines
+#   the policy logic (Rego code), this Constraint tells Gatekeeper WHEN and
+#   WHERE to enforce that logic.
+#
+# HOW CONSTRAINTS WORK:
+#   - The "kind" field references the CRD created by the ConstraintTemplate.
+#   - The "match" section defines which Kubernetes resources are subject to
+#     this policy. Here we target all NetworkPolicy resources in the
+#     "networking.k8s.io" API group.
+#   - You can further narrow the scope using namespaceSelector,
+#     excludedNamespaces, or labelSelector in the match section.
+#
+# ENFORCEMENT ACTIONS:
+#   - "deny" (default): Reject the admission request with the violation message.
+#   - "dryrun": Log the violation but allow the request (useful for testing).
+#   - "warn": Return a warning to the user but allow the request.
+#
+# PREREQUISITES:
+#   1. Gatekeeper must be installed in the cluster.
+#   2. The ConstraintTemplate (constraint-template.yaml) must be applied FIRST.
+#      Gatekeeper needs time to register the CRD before you can create a
+#      Constraint of that kind.
+#
+# APPLY WITH:
+#   kubectl apply -f constraint-template.yaml   # Apply template first
+#   kubectl apply -f constraint.yaml             # Then apply this constraint
+#
+# VERIFY:
+#   kubectl get constraints
+#   kubectl describe K8sBlockAllowAllNetworkPolicies block-allow-all-network-policies
+#
+# =============================================================================
+
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sBlockAllowAllNetworkPolicies
+metadata:
+  name: block-allow-all-network-policies
+  annotations:
+    description: >-
+      Blocks NetworkPolicies that allow all ingress traffic. This is a critical
+      security control for healthcare environments where network segmentation
+      is required by HIPAA and other regulatory frameworks.
+spec:
+  # ---------------------------------------------------------------------------
+  # ENFORCEMENT ACTION
+  # ---------------------------------------------------------------------------
+  # Set to "deny" to block violating resources from being created.
+  # Change to "dryrun" during initial rollout to observe violations without
+  # blocking any deployments. Once you are confident the policy works
+  # correctly, switch to "deny".
+  #
+  # Options: deny | dryrun | warn
+  # ---------------------------------------------------------------------------
+  enforcementAction: deny
+
+  # ---------------------------------------------------------------------------
+  # MATCH CRITERIA
+  # ---------------------------------------------------------------------------
+  # This section defines which Kubernetes resources are evaluated by this
+  # Constraint. Only resources that match ALL criteria are subject to the
+  # policy.
+  # ---------------------------------------------------------------------------
+  match:
+    # -------------------------------------------------------------------------
+    # KINDS
+    # Specifies which resource kinds and API groups to target.
+    # Here we target NetworkPolicy resources from the networking.k8s.io group.
+    # -------------------------------------------------------------------------
+    kinds:
+      - apiGroups: ["networking.k8s.io"]
+        kinds: ["NetworkPolicy"]
+
+    # -------------------------------------------------------------------------
+    # NAMESPACE SELECTOR (optional)
+    # You can limit enforcement to specific namespaces using label selectors.
+    # Uncomment the following to only enforce in namespaces labeled with
+    # "environment: production" or "compliance: hipaa":
+    # -------------------------------------------------------------------------
+    # namespaceSelector:
+    #   matchExpressions:
+    #     - key: environment
+    #       operator: In
+    #       values: ["production", "staging"]
+
+    # -------------------------------------------------------------------------
+    # EXCLUDED NAMESPACES (optional)
+    # System namespaces are typically excluded from policy enforcement because
+    # they need broader network access for cluster operations.
+    # -------------------------------------------------------------------------
+    excludedNamespaces:
+      - kube-system
+      - gatekeeper-system
+
+    # -------------------------------------------------------------------------
+    # LABEL SELECTOR (optional)
+    # Target only resources with specific labels. Uncomment to use:
+    # -------------------------------------------------------------------------
+    # labelSelector:
+    #   matchLabels:
+    #     managed-by: "application-team"

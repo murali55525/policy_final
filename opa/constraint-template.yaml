@@ -1,0 +1,192 @@
+# =============================================================================
+# OPA Gatekeeper ConstraintTemplate: K8sBlockAllowAllNetworkPolicies
+# =============================================================================
+#
+# PURPOSE:
+#   This ConstraintTemplate defines a reusable policy that prevents the creation
+#   of overly permissive NetworkPolicies in Kubernetes. Specifically, it blocks
+#   "allow-all" ingress patterns that defeat the purpose of network segmentation.
+#
+# HOW GATEKEEPER CONSTRAINTTEMPLATES WORK:
+#   1. A ConstraintTemplate defines the POLICY LOGIC (written in Rego) and a
+#      new Custom Resource Definition (CRD) kind.
+#   2. Once applied, you can create Constraint resources of that new kind to
+#      ACTIVATE the policy on specific resources.
+#   3. Gatekeeper acts as a Kubernetes admission webhook -- every time a resource
+#      is created or updated, Gatekeeper evaluates it against all active
+#      Constraints and rejects the request if any violations are found.
+#
+# WHAT THIS TEMPLATE DETECTS:
+#   - NetworkPolicies with spec.ingress set to [] (empty array -- allows all)
+#   - NetworkPolicies with spec.ingress set to [{}] (array with empty object --
+#     allows all ingress from any source)
+#   - NetworkPolicies with spec.podSelector set to {} (matches every pod in the
+#     namespace) combined with no meaningful ingress restrictions
+#
+# APPLY WITH:
+#   kubectl apply -f constraint-template.yaml
+#
+# =============================================================================
+
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sblockallowallnetworkpolicies
+  annotations:
+    description: >-
+      Prevents the creation of NetworkPolicies that allow all ingress traffic.
+      These "allow-all" policies undermine network segmentation and violate
+      the principle of least privilege, which is critical in healthcare and
+      other regulated environments.
+spec:
+  # ---------------------------------------------------------------------------
+  # CRD SPECIFICATION
+  # This section tells Gatekeeper what kind name to register as a new CRD.
+  # After applying this template, Kubernetes will recognize resources of
+  # kind "K8sBlockAllowAllNetworkPolicies".
+  # ---------------------------------------------------------------------------
+  crd:
+    spec:
+      names:
+        kind: K8sBlockAllowAllNetworkPolicies
+      # You can add parameters here if you want the Constraint to accept
+      # configuration values. For this policy we do not need any parameters.
+      # Example of optional parameters:
+      # validation:
+      #   openAPIV3Schema:
+      #     type: object
+      #     properties:
+      #       allowedNamespaces:
+      #         type: array
+      #         items:
+      #           type: string
+
+  # ---------------------------------------------------------------------------
+  # TARGETS
+  # The targets section maps this template to a specific admission control
+  # system. For Gatekeeper the target is always "admission.k8s.gatekeeper.sh".
+  # The Rego code is embedded inline below.
+  # ---------------------------------------------------------------------------
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        # =======================================================================
+        # Rego Policy: k8sblockallowallnetworkpolicies
+        # =======================================================================
+        # Rego is the policy language used by Open Policy Agent (OPA). Gatekeeper
+        # evaluates this code for every admission request that matches the
+        # Constraint's "match" criteria.
+        #
+        # KEY CONCEPTS:
+        #   - "input.review.object" is the Kubernetes resource being evaluated
+        #   - "violation" is a special rule name that Gatekeeper looks for;
+        #     each violation produces a rejection message
+        #   - Rego rules are declarative: all conditions in a rule body must
+        #     be true for the rule head to be true
+        # =======================================================================
+
+        package k8sblockallowallnetworkpolicies
+
+        # -----------------------------------------------------------------------
+        # VIOLATION 1: Detect ingress rules that are an empty list [{}]
+        # -----------------------------------------------------------------------
+        # A NetworkPolicy with ingress: [{}] means "allow all ingress traffic
+        # from any source on any port". The empty object {} inside the ingress
+        # array acts as a wildcard -- it has no "from" or "ports" restrictions.
+        #
+        # Example of what this catches:
+        #   spec:
+        #     ingress:
+        #       - {}        <-- this matches everything
+        # -----------------------------------------------------------------------
+        violation[{"msg": msg}] {
+          # Retrieve the NetworkPolicy resource under review
+          input.review.object.kind == "NetworkPolicy"
+          policy := input.review.object
+
+          # Check each ingress rule in the spec
+          ingress_rule := policy.spec.ingress[_]
+
+          # An empty object {} has zero keys -- this means "allow all"
+          count(object.keys(ingress_rule)) == 0
+
+          msg := sprintf(
+            "DENIED: NetworkPolicy '%s' in namespace '%s' contains an empty " %
+            "ingress rule (ingress: [{}]) which allows all inbound traffic. " %
+            "Every ingress rule must specify explicit 'from' and/or 'ports' " %
+            "restrictions. Open ingress rules violate network segmentation " %
+            "requirements.",
+            [policy.metadata.name, policy.metadata.namespace]
+          )
+        }
+
+        # -----------------------------------------------------------------------
+        # VIOLATION 2: Detect completely empty ingress list []
+        # -----------------------------------------------------------------------
+        # A NetworkPolicy with ingress: [] (or with the ingress field omitted
+        # entirely while policyTypes includes "Ingress") can be ambiguous.
+        # While an empty ingress list technically DENIES all ingress in the
+        # Kubernetes spec, some administrators mistakenly create this pattern
+        # believing it allows all traffic. We flag it as a violation so that
+        # intent is always explicit.
+        #
+        # NOTE: If your organization considers ingress: [] to be a valid
+        # "deny-all" pattern, you can remove this rule.
+        # -----------------------------------------------------------------------
+        violation[{"msg": msg}] {
+          input.review.object.kind == "NetworkPolicy"
+          policy := input.review.object
+
+          # Check that the ingress field exists but is an empty array
+          policy.spec.ingress != null
+          count(policy.spec.ingress) == 0
+
+          msg := sprintf(
+            "DENIED: NetworkPolicy '%s' in namespace '%s' has an empty ingress " %
+            "list (ingress: []). This is ambiguous and may not express the " %
+            "intended network restrictions. Use explicit ingress rules with " %
+            "'from' and 'ports' fields, or use a deny-all policy with " %
+            "policyTypes: [\"Ingress\"] and no ingress field at all.",
+            [policy.metadata.name, policy.metadata.namespace]
+          )
+        }
+
+        # -----------------------------------------------------------------------
+        # VIOLATION 3: Detect broad pod selector with unrestricted ingress
+        # -----------------------------------------------------------------------
+        # A NetworkPolicy that uses podSelector: {} targets ALL pods in the
+        # namespace. When combined with a permissive ingress rule (one that
+        # has no "from" restrictions), this effectively opens the namespace
+        # to all inbound traffic -- the most dangerous "allow-all" pattern.
+        #
+        # Example of what this catches:
+        #   spec:
+        #     podSelector: {}        <-- matches all pods
+        #     ingress:
+        #       - ports:             <-- has ports but no "from" restriction
+        #           - port: 80
+        # -----------------------------------------------------------------------
+        violation[{"msg": msg}] {
+          input.review.object.kind == "NetworkPolicy"
+          policy := input.review.object
+
+          # Check that the podSelector is empty (matches all pods)
+          count(object.keys(policy.spec.podSelector)) == 0
+
+          # Check that at least one ingress rule lacks a "from" field
+          ingress_rule := policy.spec.ingress[_]
+          not ingress_rule["from"]
+
+          # Only fire if the rule is not already caught by Violation 1
+          # (i.e., the rule has some keys, like "ports", but no "from")
+          count(object.keys(ingress_rule)) > 0
+
+          msg := sprintf(
+            "DENIED: NetworkPolicy '%s' in namespace '%s' uses podSelector: {} " %
+            "(matches all pods) with an ingress rule that has no 'from' " %
+            "restriction. This allows traffic from any source to reach every " %
+            "pod in the namespace. Add explicit 'from' selectors to limit " %
+            "traffic sources.",
+            [policy.metadata.name, policy.metadata.namespace]
+          )
+        }

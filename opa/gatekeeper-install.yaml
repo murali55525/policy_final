@@ -1,0 +1,153 @@
+# =============================================================================
+# OPA Gatekeeper Installation Reference
+# =============================================================================
+#
+# WHAT IS OPA GATEKEEPER?
+#   OPA (Open Policy Agent) Gatekeeper is a policy enforcement framework for
+#   Kubernetes. It acts as a validating admission webhook that intercepts
+#   every API request to the Kubernetes API server and evaluates it against
+#   a set of policies (Constraints) before allowing or denying the request.
+#
+#   Gatekeeper extends OPA with Kubernetes-native concepts:
+#     - ConstraintTemplates: Define reusable policy logic in Rego
+#     - Constraints: Activate policies on specific resources
+#     - Audit: Continuously scan existing resources for violations
+#     - Mutation (v3.10+): Modify resources to enforce defaults
+#
+# ARCHITECTURE:
+#   +------------------+     +-----------+     +-------------------+
+#   | kubectl apply    | --> | API Server| --> | Gatekeeper        |
+#   | (admission req.) |     | (webhook) |     | (policy eval.)    |
+#   +------------------+     +-----------+     +-------------------+
+#                                                  |            |
+#                                          +-------+--+  +------+------+
+#                                          |Constraint|  |Constraint   |
+#                                          |Templates |  |Resources    |
+#                                          +----------+  +-------------+
+#
+# INSTALLATION OPTIONS:
+# =============================================================================
+#
+# OPTION 1: Official Gatekeeper release manifest (RECOMMENDED)
+# -----------------------------------------------------------------------------
+# The official installation deploys all required CRDs, RBAC roles, the
+# Gatekeeper controller manager, the audit controller, and the webhook
+# configuration. The full manifest is very large (5000+ lines of YAML)
+# so we reference it here rather than inlining it.
+#
+# Install the latest stable release:
+#   kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.15.0/deploy/gatekeeper.yaml
+#
+# OPTION 2: Helm chart
+# -----------------------------------------------------------------------------
+# Helm provides more configuration flexibility (replica counts, resource
+# limits, log levels, etc.):
+#
+#   helm repo add gatekeeper https://open-policy-agent.github.io/gatekeeper/charts
+#   helm repo update
+#   helm install gatekeeper/gatekeeper \
+#     --name-template=gatekeeper \
+#     --namespace gatekeeper-system \
+#     --create-namespace \
+#     --set replicas=3 \
+#     --set audit.replicas=1 \
+#     --set auditInterval=60
+#
+# OPTION 3: OLM (Operator Lifecycle Manager) on OpenShift
+# -----------------------------------------------------------------------------
+#   Gatekeeper is available as an operator in the OpenShift OperatorHub.
+#   Search for "Gatekeeper Operator" in the OperatorHub console.
+#
+# =============================================================================
+# VERIFICATION COMMANDS:
+# =============================================================================
+#
+# Check that the Gatekeeper pods are running:
+#   kubectl get pods -n gatekeeper-system
+#
+# Expected output:
+#   NAME                                            READY   STATUS    AGE
+#   gatekeeper-audit-abcde12345-xxxxx               1/1     Running   1m
+#   gatekeeper-controller-manager-fghij67890-yyyyy  1/1     Running   1m
+#   gatekeeper-controller-manager-fghij67890-zzzzz  1/1     Running   1m
+#   gatekeeper-controller-manager-fghij67890-wwwww  1/1     Running   1m
+#
+# Check that the webhook is registered:
+#   kubectl get validatingwebhookconfigurations
+#
+# Check that the CRDs are installed:
+#   kubectl get crd | grep gatekeeper
+#
+# Expected CRDs:
+#   assign.mutations.gatekeeper.sh
+#   assignmetadata.mutations.gatekeeper.sh
+#   configs.config.gatekeeper.sh
+#   constraintpodstatuses.status.gatekeeper.sh
+#   constrainttemplatepodstatuses.status.gatekeeper.sh
+#   constrainttemplates.templates.gatekeeper.sh
+#   expansiontemplate.expansion.gatekeeper.sh
+#   modifyset.mutations.gatekeeper.sh
+#   mutatorpodstatuses.status.gatekeeper.sh
+#   providers.externaldata.gatekeeper.sh
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Gatekeeper System Namespace
+# -----------------------------------------------------------------------------
+# Gatekeeper components run in a dedicated namespace. This namespace is
+# created automatically by the official installation manifest, but we
+# define it here for clarity and to ensure it exists before applying
+# any Gatekeeper resources.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper-system
+  labels:
+    # These labels are used by Gatekeeper to identify its own namespace
+    # and exclude it from policy enforcement (to prevent self-blocking).
+    admission.gatekeeper.sh/ignore: "no-self-managing"
+    control-plane: controller-manager
+    gatekeeper.sh/system: "yes"
+    # Pod security standards -- Gatekeeper needs elevated privileges to
+    # run its webhook server and access cluster-wide resources.
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+
+# =============================================================================
+# FULL INSTALLATION
+# =============================================================================
+# To complete the Gatekeeper installation, run the following command.
+# This deploys the controller manager, audit controller, webhook
+# configuration, CRDs, RBAC roles, and service accounts:
+#
+#   kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.15.0/deploy/gatekeeper.yaml
+#
+# The full manifest includes:
+#   - CustomResourceDefinitions for ConstraintTemplates, Constraints, etc.
+#   - ClusterRole and ClusterRoleBinding for Gatekeeper's RBAC
+#   - ServiceAccount for the controller manager
+#   - Deployment for gatekeeper-controller-manager (3 replicas by default)
+#   - Deployment for gatekeeper-audit (1 replica)
+#   - Service for the webhook endpoint
+#   - ValidatingWebhookConfiguration to register with the API server
+#   - Secret for the webhook TLS certificate
+#   - Various ConfigMaps for Gatekeeper configuration
+#
+# After installation, wait for all pods to become Ready:
+#   kubectl wait --for=condition=Ready pod -l control-plane=controller-manager \
+#     -n gatekeeper-system --timeout=120s
+#
+# Then apply the ConstraintTemplate and Constraint:
+#   kubectl apply -f constraint-template.yaml
+#   sleep 10  # Wait for the CRD to be registered
+#   kubectl apply -f constraint.yaml
+#
+# Test with the rejected policy example:
+#   kubectl apply -f rejected-policy-example.yaml
+#   # Expected: admission webhook denies the request
+# =============================================================================

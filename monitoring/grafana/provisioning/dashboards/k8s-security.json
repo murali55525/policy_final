@@ -1,0 +1,265 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Security Risk Score",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "orange", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "max": 100,
+          "min": 0,
+          "unit": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "security_risk_score",
+          "legendFormat": "Risk Score",
+          "refId": "A"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "type": "stat",
+      "title": "Total Policies",
+      "gridPos": { "h": 6, "w": 3, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "policies_total",
+          "legendFormat": "Total",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Policies Deployed",
+      "gridPos": { "h": 6, "w": 3, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "policies_deployed",
+          "legendFormat": "Deployed",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Drift Events",
+      "gridPos": { "h": 6, "w": 3, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "orange", "value": 15 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "drift_events_total",
+          "legendFormat": "Events",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Services Up",
+      "gridPos": { "h": 6, "w": 3, "x": 15, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "policy_generator_up + drift_detector_up",
+          "legendFormat": "Up",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Security Risk Score Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "pointSize": 5,
+            "showPoints": "auto"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "orange", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "max": 100,
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "security_risk_score",
+          "legendFormat": "Risk Score",
+          "refId": "A"
+        }
+      ],
+      "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Drift Events Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "pointSize": 5,
+            "showPoints": "auto"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "drift_events_total",
+          "legendFormat": "Total Events",
+          "refId": "A"
+        }
+      ],
+      "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Policies (Total vs Deployed)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "auto"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "policies_total",
+          "legendFormat": "Total Policies",
+          "refId": "A"
+        },
+        {
+          "expr": "policies_deployed",
+          "legendFormat": "Deployed Policies",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Service Health Status",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "auto"
+          },
+          "max": 1,
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "policy_generator_up",
+          "legendFormat": "Policy Generator",
+          "refId": "A"
+        },
+        {
+          "expr": "drift_detector_up",
+          "legendFormat": "Drift Detector",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["k8s", "security"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "K8s Security Overview",
+  "uid": "k8s-security-overview",
+  "version": 1,
+  "refresh": "15s"
+}
