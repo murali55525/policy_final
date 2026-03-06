@@ -77,6 +77,12 @@ const api = {
   acknowledgeDriftEvent: (eventId) => apiClient.post(`/api/v1/drift/events/${eventId}/acknowledge`),
   resolveDriftEvent: (eventId) => apiClient.post(`/api/v1/drift/events/${eventId}/resolve`),
 
+  // OPA Validation
+  validatePoliciesOPA: (policies) => apiClient.post("/api/v1/opa/validate", { policies }),
+  validateStoredPolicyOPA: (policyId) => apiClient.post(`/api/v1/opa/validate/${policyId}`),
+  getOPARules: () => apiClient.get("/api/v1/opa/rules"),
+  getOPAHistory: () => apiClient.get("/api/v1/opa/history"),
+
   // Health Check
   healthCheck: () => apiClient.get("/health"),
   getSystemHealth: () => apiClient.get("/api/v1/system/health"),

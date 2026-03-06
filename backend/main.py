@@ -18,6 +18,7 @@ from policy_generator import PolicyGenerator
 from drift_detector import DriftDetector
 from risk_scorer import RiskScorer
 from kubernetes_client import KubernetesClient
+from opa_validator import OPAValidator
 import healthcare
 
 app = FastAPI(
@@ -40,6 +41,7 @@ policy_generator = PolicyGenerator()
 drift_detector = DriftDetector()
 risk_scorer = RiskScorer()
 k8s_client = KubernetesClient()
+opa_validator = OPAValidator()
 
 # In-memory storage (use Redis/DB in production)
 policies_store: Dict[str, Any] = {}
@@ -120,6 +122,9 @@ async def generate_policies(intent: Intent):
         # Generate policies
         policies = policy_generator.generate(intent_dict)
         
+        # Run OPA validation on generated policies
+        opa_report = opa_validator.validate_policies(policies)
+        
         # Store policies
         policy_id = str(uuid.uuid4())[:8]
         policies_store[policy_id] = {
@@ -129,7 +134,8 @@ async def generate_policies(intent: Intent):
             "policies": policies,
             "created_at": datetime.now().isoformat(),
             "deployed": False,
-            "namespace": intent.namespace
+            "namespace": intent.namespace,
+            "opa_validation": opa_report
         }
         
         return {
@@ -137,7 +143,8 @@ async def generate_policies(intent: Intent):
             "policy_id": policy_id,
             "policies_count": len(policies),
             "policies": policies,
-            "yaml": policy_generator.to_yaml(policies)
+            "yaml": policy_generator.to_yaml(policies),
+            "opa_validation": opa_report
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -159,6 +166,19 @@ async def deploy_policies(request: PolicyDeployRequest):
             raise HTTPException(status_code=404, detail="Policy not found")
         
         policy_data = policies_store[request.policy_id]
+        
+        # Run OPA validation before deployment (security gate)
+        opa_report = opa_validator.validate_policies(policy_data["policies"])
+        critical_violations = opa_report["severity_summary"].get("critical", 0)
+        
+        if critical_violations > 0:
+            return {
+                "success": False,
+                "policy_id": request.policy_id,
+                "blocked_by_opa": True,
+                "message": f"Deployment blocked: {critical_violations} critical OPA violation(s) detected. Fix violations before deploying.",
+                "opa_validation": opa_report,
+            }
         
         # Deploy to Kubernetes
         results = await k8s_client.apply_policies(
@@ -313,6 +333,46 @@ async def get_namespaces():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── OPA Validation Endpoints ───
+
+@app.post("/api/v1/opa/validate")
+async def validate_policies_opa(data: dict):
+    """Validate NetworkPolicy manifests against OPA rules"""
+    try:
+        policies = data.get("policies", [])
+        if not policies:
+            raise HTTPException(status_code=400, detail="No policies provided for validation")
+        report = opa_validator.validate_policies(policies)
+        return report
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/opa/validate/{policy_id}")
+async def validate_stored_policy(policy_id: str):
+    """Validate a stored policy against OPA rules"""
+    if policy_id not in policies_store:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    policy_data = policies_store[policy_id]
+    report = opa_validator.validate_policies(policy_data["policies"])
+    policies_store[policy_id]["opa_validation"] = report
+    return report
+
+
+@app.get("/api/v1/opa/rules")
+async def get_opa_rules():
+    """Get info about all OPA validation rules"""
+    return {"rules": opa_validator.get_rules_info(), "total": len(opa_validator.get_rules_info())}
+
+
+@app.get("/api/v1/opa/history")
+async def get_opa_history():
+    """Get OPA validation history"""
+    return {"history": opa_validator.get_validation_history()}
+
+
 # WebSocket for real-time updates
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -442,7 +502,8 @@ async def health_check():
             "api": "up",
             "policy_generator": "up",
             "drift_detector": drift_detector.status(),
-            "risk_scorer": "up"
+            "risk_scorer": "up",
+            "opa_validator": "up"
         }
     }
 
@@ -498,6 +559,13 @@ async def system_health():
             "port": 8000,
             "url": "/api/v1/drift/events",
         },
+        {
+            "name": "OPA Validator",
+            "status": "healthy",
+            "uptime": "running",
+            "port": 8000,
+            "url": "/api/v1/opa/rules",
+        },
     ]
 
     return {
@@ -518,6 +586,8 @@ async def system_health():
             "total_drift_events": len(drift_events),
             "policies_total": len(policies_store),
             "policies_deployed": sum(1 for p in policies_store.values() if p.get("deployed")),
+            "opa_validations": len(opa_validator.get_validation_history()),
+            "opa_rules_active": len(opa_validator.get_rules_info()),
         },
         "patients": {
             "total": len(healthcare.patients_store),
@@ -536,7 +606,21 @@ async def prometheus_metrics():
     policies_total = len(policies_store)
     policies_deployed = sum(1 for p in policies_store.values() if p.get("deployed", False))
     drift_events_count = len(drift_detector.events)
-    
+
+    # Get OPA stats
+    opa_history = opa_validator.get_validation_history()
+    opa_validations_total = len(opa_history)
+    opa_violations_total = sum(h.get("total_violations", 0) for h in opa_history)
+    opa_critical_violations = sum(
+        h.get("severity_summary", {}).get("critical", 0) for h in opa_history
+    )
+    opa_rules_active = len(opa_validator.get_rules_info())
+    # Average security score from OPA history (100 if no history)
+    if opa_history:
+        opa_security_score = sum(h.get("security_score", 100) for h in opa_history) / len(opa_history)
+    else:
+        opa_security_score = 100.0
+
     # Get risk score (async method)
     try:
         risk_data = await risk_scorer.calculate()
@@ -568,6 +652,30 @@ policy_generator_up 1
 # HELP drift_detector_up Drift detector status
 # TYPE drift_detector_up gauge
 drift_detector_up 1
+
+# HELP opa_validations_total Total number of OPA validation runs
+# TYPE opa_validations_total counter
+opa_validations_total {opa_validations_total}
+
+# HELP opa_violations_total Total OPA violations detected across all validations
+# TYPE opa_violations_total counter
+opa_violations_total {opa_violations_total}
+
+# HELP opa_critical_violations_total Total critical OPA violations detected
+# TYPE opa_critical_violations_total counter
+opa_critical_violations_total {opa_critical_violations}
+
+# HELP opa_security_score Average OPA security score (0-100, higher is better)
+# TYPE opa_security_score gauge
+opa_security_score {opa_security_score:.1f}
+
+# HELP opa_rules_active Number of active OPA validation rules
+# TYPE opa_rules_active gauge
+opa_rules_active {opa_rules_active}
+
+# HELP opa_validator_up OPA validator service status
+# TYPE opa_validator_up gauge
+opa_validator_up 1
 """
     return PlainTextResponse(content=metrics, media_type="text/plain")
 

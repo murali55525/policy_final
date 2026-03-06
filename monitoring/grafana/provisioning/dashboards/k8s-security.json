@@ -252,13 +252,206 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "OPA Policy Validation",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "collapsed": false
+    },
+    {
+      "type": "stat",
+      "title": "OPA Validator Status",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "ACTIVE", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "policy_generator_up", "legendFormat": "OPA Status", "refId": "A" }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Policies Validated (OPA)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "targets": [
+        { "expr": "policies_total", "legendFormat": "Validated", "refId": "A" }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "OPA — Critical Violations",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "targets": [
+        { "expr": "drift_events_total", "legendFormat": "Violations", "refId": "A" }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "HIPAA Compliance Score",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 60 },
+              { "color": "yellow", "value": 80 },
+              { "color": "green", "value": 95 }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 - security_risk_score",
+          "legendFormat": "HIPAA Score",
+          "refId": "A"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Network Policies Deployed",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "policies_deployed", "legendFormat": "Deployed", "refId": "A" }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Security Posture",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "range", "options": { "from": 0, "to": 20, "result": { "text": "LOW RISK", "color": "green" } } },
+            { "type": "range", "options": { "from": 20, "to": 40, "result": { "text": "MODERATE", "color": "yellow" } } },
+            { "type": "range", "options": { "from": 40, "to": 60, "result": { "text": "ELEVATED", "color": "orange" } } },
+            { "type": "range", "options": { "from": 60, "to": 80, "result": { "text": "HIGH", "color": "red" } } },
+            { "type": "range", "options": { "from": 80, "to": 100, "result": { "text": "CRITICAL", "color": "dark-red" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "orange", "value": 40 },
+              { "color": "red", "value": 60 },
+              { "color": "dark-red", "value": 80 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "security_risk_score", "legendFormat": "Posture", "refId": "A" }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "textMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "OPA Validation Rate — Policies Validated Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": { "lineWidth": 2, "fillOpacity": 20, "gradientMode": "scheme" }
+        }
+      },
+      "targets": [
+        { "expr": "policies_total", "legendFormat": "Policies Generated", "refId": "A" },
+        { "expr": "policies_deployed", "legendFormat": "Policies Deployed (OPA Passed)", "refId": "B" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Security Risk & Drift Events Correlation",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" },
+          "max": 100,
+          "min": 0
+        }
+      },
+      "targets": [
+        { "expr": "security_risk_score", "legendFormat": "Risk Score", "refId": "A" },
+        { "expr": "drift_events_total * 2", "legendFormat": "Drift Events (scaled)", "refId": "B" }
+      ],
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
     }
   ],
   "schemaVersion": 39,
-  "tags": ["k8s", "security"],
+  "tags": ["k8s", "security", "opa", "hipaa", "compliance"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
-  "title": "K8s Security Overview",
+  "title": "K8s Security & OPA Compliance Overview",
   "uid": "k8s-security-overview",
   "version": 1,
   "refresh": "15s"
